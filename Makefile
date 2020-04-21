@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS= -std=c99 -pedantic -Wall -Wextra
+CFLAGS= -std=c99 -pedantic -Wall -Wextra -lpcap
 
 all: ipk-sniffer
 	$(CC) $(CFLAGS) -o ipk-sniffer ipk-sniffer.c
