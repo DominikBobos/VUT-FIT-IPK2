@@ -21,134 +21,151 @@
 #include <netinet/ip6.h>
 
 
-struct mac_filter
-    {
-        u_char ether_dhost[ETHER_ADDR_LEN];
-        u_char ether_shost[ETHER_ADDR_LEN];
-        u_short ether_type;
-    }__attribute__ ((packed));
-
-void print_tcp_packet(const u_char * Buffer, int Size)
+struct pckt_info 
 {
-    unsigned short iphdrlen;
+    char src_addr[256];
+    char dest_addr[256];
+    unsigned src_port;
+    unsigned dest_port;
+    int header_size;
+};
+
+struct addr_info
+{
+	struct in_addr src_addr;
+	struct in_addr dest_addr;
+};
+
+struct mac_filter
+{
+    u_char ether_dhost[ETHER_ADDR_LEN];
+    u_char ether_shost[ETHER_ADDR_LEN];
+    u_short ether_type;
+}__attribute__ ((packed));
+
+char *host_name(struct in_addr ip_addr);
+
+char *add_space(int count)
+{
+	char spaces[count];
+	for (int i = 0; i < count; i++)
+		spaces[i] = ' ';
+	spaces[count] = '\0';
+	return spaces;
+}
+
+struct pckt_info udp_packet(const u_char * buffer)
+{
+	struct pckt_info header;
+	int iphdr_len;
      
-    struct ip *iph = (struct ip *)( Buffer  + sizeof(struct ether_header) );
-    iphdrlen = iph->ip_hl*4;
+    struct ip *iph = (struct ip *)(buffer + sizeof(struct ether_header));
+    iphdr_len = iph->ip_hl*4;
      
-    struct tcphdr *tcph=(struct tcphdr*)(Buffer + iphdrlen + sizeof(struct ether_header));
+    struct udphdr *udph = (struct udphdr*)(buffer + iphdr_len + sizeof(struct ether_header));   
+    int udphdr_len =  sizeof(struct ether_header) + iphdr_len + sizeof udph;
+     
+    // fprintf(stdout , "\n***********************UDP Packet*************************\n");
+    strcpy(header.src_addr,host_name(iph->ip_src));
+    strcpy(header.dest_addr,host_name(iph->ip_dst));
+    header.src_port = ntohs(udph->uh_sport);
+    header.dest_port = ntohs(udph->uh_dport);
+    header.header_size = udphdr_len;
+    return header;
+}
+
+struct pckt_info tcp_packet(const u_char * buffer)
+{
+	struct pckt_info header;
+    int iphdr_len;
+     
+    struct ip *iph = (struct ip *)(buffer + sizeof(struct ether_header));
+    iphdr_len = iph->ip_hl*4;
+
+    struct tcphdr *tcph = (struct tcphdr*)(buffer + iphdr_len + sizeof(struct ether_header));
              
-    int header_size =  sizeof(struct ether_header) + iphdrlen + tcph->th_off*4;
+    int tcphdr_len =  sizeof(struct ether_header) + iphdr_len + tcph->th_off*4;
      
-    fprintf(stdout , "\n***********************TCP Packet*************************\n");  
-         
-    // print_ip_header(Buffer,Size);
-         
-    fprintf(stdout , "\n");
-    fprintf(stdout , "TCP Header\n");
-    fprintf(stdout , "   |-Source Port      : %u\n",ntohs(tcph->th_sport));
-    fprintf(stdout , "   |-Destination Port : %u\n",ntohs(tcph->th_dport));
-    fprintf(stdout , "   |-Sequence Number    : %u\n",ntohl(tcph->th_seq));
-    fprintf(stdout , "   |-Acknowledge Number : %u\n",ntohl(tcph->th_ack));
-    // fprintf(stdout , "   |-Header Length      : %d DWORDS or %d BYTES\n" ,(unsigned int)tcph->doff,(unsigned int)tcph->doff*4);
-    // //fprintf(stdout , "   |-CWR Flag : %d\n",(unsigned int)tcph->cwr);
-    // //fprintf(stdout , "   |-ECN Flag : %d\n",(unsigned int)tcph->ece);
-    // fprintf(stdout , "   |-Urgent Flag          : %d\n",(unsigned int)tcph->urg);
-    // fprintf(stdout , "   |-Acknowledgement Flag : %d\n",(unsigned int)tcph->ack);
-    // fprintf(stdout , "   |-Push Flag            : %d\n",(unsigned int)tcph->psh);
-    // fprintf(stdout , "   |-Reset Flag           : %d\n",(unsigned int)tcph->rst);
-    // fprintf(stdout , "   |-Synchronise Flag     : %d\n",(unsigned int)tcph->syn);
-    // fprintf(stdout , "   |-Finish Flag          : %d\n",(unsigned int)tcph->fin);
-    // fprintf(stdout , "   |-Window         : %d\n",ntohs(tcph->window));
-    // fprintf(stdout , "   |-Checksum       : %d\n",ntohs(tcph->check));
-    // fprintf(stdout , "   |-Urgent Pointer : %d\n",tcph->urg_ptr);
-    // fprintf(stdout , "\n");
-    // fprintf(stdout , "                        DATA Dump                         ");
-    // fprintf(stdout , "\n");
-    // fprintf(stdout , "IP Header\n");
-    // PrintData(Buffer,iphdrlen);
-         
-    // fprintf(stdout , "TCP Header\n");
-    // PrintData(Buffer+iphdrlen,tcph->doff*4);
-         
-    // fprintf(stdout , "Data Payload\n");    
-    // PrintData(Buffer + header_size , Size - header_size );
-                         
-    // fprintf(stdout , "\n###########################################################");
+    // fprintf(stdout , "\n***********************TCP Packet*************************\n");  
+
+    strcpy(header.src_addr,host_name(iph->ip_src));
+    strcpy(header.dest_addr,host_name(iph->ip_dst));
+    header.src_port = ntohs(tcph->th_sport);
+    header.dest_port = ntohs(tcph->th_dport);
+    header.header_size = tcphdr_len;
+    return header;
 }
 
 void callback(u_char *args, const struct pcap_pkthdr* pkthdr,const u_char* buffer)
 {
 	//https://stackoverflow.com/questions/5177879/display-the-contents-of-the-packet-in-c
 	struct mac_filter *p = (struct mac_filter *) buffer;
+	struct pckt_info packet_info;
     const unsigned int data_len = (pkthdr->len);
-    const u_char *data = (buffer);
-    int i = 0;
+    const u_char *data = (buffer);     
+	// printf("\nPacket number, length of this packet is: %d\n", pkthdr->len);
 
-    printf("Type: %04hx\n", p->ether_type);
-
-    printf(
-        "Destination: %02X:%02X:%02X:%02X:%02X:%02X\n",
-        p->ether_dhost[0], p->ether_dhost[1], p->ether_dhost[2],
-        p->ether_dhost[3], p->ether_dhost[4], p->ether_dhost[5]
-    );
-
-    printf(
-        "Sender:      %02X:%02X:%02X:%02X:%02X:%02X\n",
-        p->ether_shost[0], p->ether_shost[1], p->ether_shost[2],
-        p->ether_shost[3], p->ether_shost[4], p->ether_shost[5]
-    );
-
-    for (i = 0; i < data_len; i++) {
-        printf("  %02x", data[i] & 0xff);
-    }        
-    printf("\n");
-	// static int count = 1;
-
-	printf("\nPacket number, length of this packet is: %d\n", pkthdr->len);
-	// char *test = args;
- //    puts(test);
-	// int size = pkthdr->len;
+	int size = pkthdr->len;
 	char time[30];
-	// printf("%s",ctime((const time_t*)&pkthdr->ts.tv_sec));
-	strftime(time,sizeof(time),"%H:%M:%S", localtime(&pkthdr->ts.tv_sec));	//usec
-	puts(time);
-	// //Get the IP Header part of this packet , excluding the ethernet header
-	// struct ip *iph = (struct ip*)(buffer + sizeof(struct ether_header));
-	// switch (iph->ip_p) //Check the Protocol and do accordingly...
-	// {
-	// 	case 6:  //TCP Protocol
-	// 		puts("mam tcp");
-	// 		print_tcp_packet(buffer , size);
-	// 		break;
+	strftime(time,sizeof(time),"%H:%M:%S", localtime(&pkthdr->ts.tv_sec));
+	//Get the IP Header part of this packet , excluding the ethernet header
+	struct ip *iph = (struct ip*)(buffer + sizeof(struct ether_header));
+	switch (iph->ip_p) //Check the Protocol and do accordingly...
+	{
+		case 6:  //TCP Protocol
+			packet_info = tcp_packet(buffer);
+			break;
 		 
-	// 	case 17: //UDP Protocol
-	// 		puts("mam UDP");
-	// 		// print_udp_packet(buffer , size);
-	// 		break;
-	// }
+		case 17: //UDP Protocol
+			puts("mam UDP");
+			packet_info = udp_packet(buffer);
+			break;
+	}
+	printf("%s.%d %s : %u > %s : %u\n\n",time, pkthdr->ts.tv_usec, 
+		packet_info.src_addr, packet_info.src_port, 
+		packet_info.dest_addr, packet_info.dest_port );
+	for (int i = 0; i < (int)data_len/16+1; i++) {
+		int for_ascii = 0;
+		int header_end = packet_info.header_size;
+		char ascii;
+
+		for (int k = 0; k < 16; k++)
+		{
+			if (i*16+k == (int)data_len) {printf("%s", add_space(16 - k)); break; }
+
+			if (k == 8) {printf(" ");}
+        	printf(" %02x", data[i*16+k] & 0xff);
+        }	//printf(" %02x", data[i*16+k] & 0xff);
+        printf("  ");
+        for (int k = 0; k < 16; k++)
+		{
+			if (i*16+k == (int)data_len) {break;}
+			if (k == 8) {printf(" ");}
+			for_ascii = data[i*16+k] - 127;
+			if (for_ascii < 33 || for_ascii > 126) 
+				ascii = 46;
+			else 
+				ascii = for_ascii;
+        	printf("%c", ascii);
+        }
+        printf("\n");
+    }   
+
 }
 
 
-char host_name(char iface[10], bpf_u_int32 pNet, bpf_u_int32 pMask)
+
+char *host_name(struct in_addr ip_addr)
 {
 	//https://cboard.cprogramming.com/c-programming/169902-getnameinfo-example-problem.html
-	char ip[15];
-	// fetch the network address and network mask
-	struct in_addr address; /* Used for both ip & subnet https://www.devdungeon.com/content/using-libpcap-c */
-	char errbuf[PCAP_ERRBUF_SIZE]; 
-	if (pcap_lookupnet(iface, &pNet, &pMask, errbuf) == -1)
-	{
-		printf("%s\n", errbuf);
-		return 10;
-	}
-
-	/* Get ip in human readable form */
-	address.s_addr = pNet;
-	strcpy(ip, inet_ntoa(address));
+	char ip[256];
+	// /* Get ip in human readable form */
+	// address.s_addr = pNet;
+	strcpy(ip, inet_ntoa(ip_addr));
 	if (ip == NULL) 
 	{
 		perror("inet_ntoa"); /* print error */
-		return 1;
+		return "error";
 	}
 
 	struct sockaddr_in sa;
@@ -158,22 +175,12 @@ char host_name(char iface[10], bpf_u_int32 pNet, bpf_u_int32 pMask)
 	sa.sin_family = AF_INET;
 	 
 	inet_pton(AF_INET, ip, &sa.sin_addr);
-	/* google-public-dns-a.google.com */
  
 	int res = getnameinfo((struct sockaddr*)&sa, sizeof(sa),
 						  node, sizeof(node),
 						  NULL, 0, NI_NAMEREQD);   
-	if (res) 
-	{
-		printf("error: %d\n", res);
-		printf("%s\n", gai_strerror(res));
-		return ip;
-	}
-	else
-	{
-		printf("node=%s\n", node);
-		return node;
-	}
+	if (res) {return &ip;}
+	else {return &node;}
 }
 
 
@@ -224,7 +231,7 @@ bool args_parse(int argc, char *argv[], char *iface, char *port, int *pnum, int 
 			*udp = 1;
 			break;
 		default:
-			// printf("/* Unexpected option */\n");
+			printf("/* Unexpected option */\n");
 			/* Unexpected option */
 			return false;
 		}
@@ -310,7 +317,6 @@ int main(int argc, char *argv[])
 	// For now, maximum limit on number of packets is specified
 	// by user.
 	pcap_loop(opensniff, pnum, callback, NULL);
-	printf("\nDone with packet sniffing!\n");
 	return 0;
 }
 
