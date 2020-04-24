@@ -1,0 +1,56 @@
+\documentclass[11pt, a4paper]{article}
+
+\usepackage[slovak]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{times}
+\usepackage[left=2cm, top=3cm, text={17cm, 24cm}]{geometry}
+\usepackage[unicode, colorlinks, hypertexnames=false, citecolor=red]{hyperref}
+\usepackage{tabto}
+
+\begin{document}
+	\begin{titlepage}
+		\begin{center}
+			\Huge
+			\textsc{Vysoké učení technické v~Brně} \\
+			\huge
+			\textsc{Fakulta informačních technologií} \\
+			\vspace{\stretch{0.382}}
+			\LARGE
+			Projektová dokumentácia k~predmetu IPK \\
+			\Huge
+			Packet sniffer (varianta ZETA)
+			\vspace{\stretch{0.618}}
+		\end{center}
+
+		{\Large
+			\today
+			\hfill
+			\begin{tabular}{r}
+			Dominik Boboš (xbobos00)
+			\end{tabular}
+		}
+	\end{titlepage}
+	
+	\tableofcontents
+	\newpage
+	
+	\section{Úvod}
+	Zadaním projektu bolo vytvorenie programu sieťového analyzátoru, ktorý zachytáva a filtruje na určitom sieťovom rozhraní prichádzajúce a odchádzajúce TCP a UDP pakety.
+	
+	Packet sniffer, nazývaný aj paket analyzátor pozostáva z dvoch hlavných častí. Prvou je sieťový adaptér, ktorý pripája program k existujúcej sieti. Druhá časť uskutočnňuje analýzu samotných zachytených paketov, v našom prípade zisťuje \emph(čas), kedy bol TCP alebo UDP paket zachytený, \emph{IP adresu} zdroja a cieľa a taktiež aj \emph{port} zdroja a 
+	\section{Spustenie programu}
+	\section{Implementácia}
+	Program je implementovaný v jazyku \textbf{C} v súbore \texttt{ipk-sniffer.c}.  Je kompatibilný s linuxovými systémami a takisto aj so systémom macOS.
+	\subsection{Použité knižnice}
+	\subsection{Funkcie programu}
+	Je rozdelený do niekoľkých funkcií. Implementácia sieťového adaptéru prípajajúceho sa na existujúcu sieť je v hlavnom tele \emph{int main(int argc, char *argv[])} využívajú funkcie knižnice \emph{pcap.h}.
+	\section{Testovanie}
+	\section{Použité zdroje}
+	
+	
+\end{document}
+
+	
+	
+	

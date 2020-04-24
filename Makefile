@@ -1,11 +1,8 @@
 CC=gcc
-CFLAGS= -std=c99 -pedantic -Wall -Wextra -lpcap
-
-all: ipk-sniffer
-	$(CC) $(CFLAGS) -o ipk-sniffer ipk-sniffer.c
-
-run:
-	./ipk-sniffer
+CFLAGS= -std=gnu99 -pedantic -Wall -Wextra -lpcap
+all:
+	$(CC) $(CFLAGS) ipk-sniffer.c -o  ipk-sniffer -lpcap
 
 clean:
 	rm -f ipk-sniffer
+
