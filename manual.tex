@@ -1,12 +1,13 @@
 \documentclass[11pt, a4paper]{article}
 
-\usepackage[slovak]{babel}
+\usepackage[czech]{babel}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage{times}
 \usepackage[left=2cm, top=3cm, text={17cm, 24cm}]{geometry}
 \usepackage[unicode, colorlinks, hypertexnames=false, citecolor=red]{hyperref}
 \usepackage{tabto}
+\hypersetup{colorlinks = true, hypertexnames = false}
 
 \begin{document}
 	\begin{titlepage}
@@ -38,15 +39,82 @@
 	\section{Úvod}
 	Zadaním projektu bolo vytvorenie programu sieťového analyzátoru, ktorý zachytáva a filtruje na určitom sieťovom rozhraní prichádzajúce a odchádzajúce TCP a UDP pakety.
 	
-	Packet sniffer, nazývaný aj paket analyzátor pozostáva z dvoch hlavných častí. Prvou je sieťový adaptér, ktorý pripája program k existujúcej sieti. Druhá časť uskutočnňuje analýzu samotných zachytených paketov, v našom prípade zisťuje \emph(čas), kedy bol TCP alebo UDP paket zachytený, \emph{IP adresu} zdroja a cieľa a taktiež aj \emph{port} zdroja a 
+	Packet sniffer, nazývaný aj paketový analyzátor pozostáva z dvoch hlavných častí. Prvou je sieťový adaptér, ktorý pripája program k existujúcej sieti. Druhá časť uskutočnňuje analýzu samotných zachytených paketov, v našom prípade zisťuje \emph(čas), kedy bol TCP alebo UDP paket zachytený, \emph{IP adresu} zdroja a cieľa a taktiež aj \emph{port} zdroja a cieľa\cite{Paessler}.
+	
 	\section{Spustenie programu}
+	Program je kompatibilný s linuxovými systémami a takisto aj so systémom macOS 10.13+. K správnej kompilácií je vhodné disponovať prekladačom \texttt{gcc 7.5.0} a vyššie. Takisto je potrebný program make, testované na verzií \texttt{GNU Make 4.1}.\\
+V priečinku projektu sa nachádza Makefile, ktorý umožní projekt zostaviť použitím:
+
+\texttt{\$ make}\\
+Vyčistenie zkompilovaného programu ipk-sniffer je možné pomocou:
+
+\texttt{\$ make clean}\\
+Projekt sa spúšta pomocou:
+
+\texttt{\$ ./ipk-sniffer -i rozhranie [-p ­­port] [--tcp|-t] [--udp|-u] [-n num]}\\
+Pokiaľ nie je možné projekt spustiť je potrebné mu poskytnúť administrátorské práva:
+\label{vstupne argumenty}
+\texttt{\$ sudo ./ipk-sniffer -i rozhranie [-p ­­port] [--tcp|-t] [--udp|-u] [-n num]}\\
+\begin{itemize}
+\item \texttt{-i <rozhranie>} - určuje rozhranie, na ktorom bude program pracovať, v prípade, že sa tento argument nevyskytuje, vypíše sa zoznam dostupných rozhraní. V prípade chýbajúceho parametru \emph{<rozhranie>} sa vypíše nápoveda.
+\item \texttt{-p <port>} - voliteľný parameter, filtruje pakety na danom rozhraní podľa portu \emph{<port>}, parameter port môže obsahovať najviac 9 čísel, inak sa program ukončí s hodnotou 1.
+\item \texttt{--tcp |\,-t} - voliteľný parameter, budú zobrazované len TCP pakety
+\item \texttt{--udp |\,-u} - voliteľný parameter, budú zobrazované len UDP pakety
+\item \texttt{-n <num>} - určuje počet zachytených paketov. V prípade, že sa argument nevyskytuje, zobrazí sa 1 paket. 
+\end{itemize}
+Nápovedu je možné zobraziť pomocou prepínaču \texttt{-h}, prípadne nesprávnym zadaním iného argumentu.
+V prípade chybných argumentov alebo bola vyžiadaná nápoveda, program skončí s návratovou hodnotou \textbf{1}.
+V prípade úspechu vráti hodnotu \textbf{0}.
+V prípade zlyhania súčastí knižnice PCAP vráti hodnotu \textbf{10}.
+	
+	\section{Použité knižnice}
+	V programe je použitých mnoho knižníc, dajú sa rozdeliť na dve kategórie. 
+	
+	Prvou kategóriou sú potrebné knižnice pre podporu funkcií jazyka C:
+	\begin{itemize}
+	\item \texttt{<stdio.h>, <stdlib.h>, <stdbool.h>, <string.h> } - štandardné funkcie ako \emph{malloc}, práca s reťazcami.
+	\item \texttt{<signal.h>} - na zachytenie signálu ukončenia programu pomocou CTRL+C.
+	\item \texttt{<ctype.h>} - pre funkciu \emph{isprint(..)}.
+	\item \texttt{<getopt.h>} - na spracovanie argumentov príkazového riadku.
+	\item	\texttt{<time.h>,<sys/types.h>} - na správnu prácu s časom.	
+	\end{itemize}
+	Druhou kategóriou sú knižnice potrebné pre pripojenie sa k sieťovému adaptéru, alebo k používaniu štruktúr paketov:
+	\begin{itemize}
+	\item \texttt{<netdb.h>} funkcie getnameinfo(...) pre nájdenie FQDN a makrá ako NI\_MAXHOST.
+	\item \texttt{<arpa/inet.h>} funkcie \emph{inet\_pton(...)}, \emph{inet\_pton(...)}, \emph{inet\_pton(...)} pre prácu s IP adresami IPv4, IPv6.
+	\item \texttt{<pcap.h>} funkcie z pcap knižnice slúžiace k zostaveniu sieťového adaptéra, ktorý sa pripojí k existujúcemu pripojeniu a taktiež k zachytávaniu paketov.
+	\item \texttt{<netinet/ip.h>, <netinet/ip6.h>} - štruktúry hlavičiek IPv4 a IPv6 paketov.
+	\item \texttt{<netinet/tcp.h>, <netinet/udp.h>} - štrukúry hlavičiek TCP a UDP paketov.
+	\item \texttt{<netinet/if\_ether.h>} - štruktúra ethernetovej hlavičky.
+	\end{itemize}
+
 	\section{Implementácia}
-	Program je implementovaný v jazyku \textbf{C} v súbore \texttt{ipk-sniffer.c}.  Je kompatibilný s linuxovými systémami a takisto aj so systémom macOS.
-	\subsection{Použité knižnice}
-	\subsection{Funkcie programu}
-	Je rozdelený do niekoľkých funkcií. Implementácia sieťového adaptéru prípajajúceho sa na existujúcu sieť je v hlavnom tele \emph{int main(int argc, char *argv[])} využívajú funkcie knižnice \emph{pcap.h}.
+	Program je implementovaný v jazyku \textbf{C} v súbore \texttt{ipk-sniffer.c}.  
+	Ipk-sniffer.c je rozdelený do niekoľkých funkcií. Na začiatku sa do premenných načítajú vstupné argumenty uvedené v sekcií \ref{vstupne argumenty} pomocou funkcie \emph{args\_parse(int argc, char *argv[], char *iface, char *port, int *pnum, int *tcp, int *udp)}. 
+	
+	
+	Implementácia sieťového adaptéru prípajajúceho sa na existujúcu sieť je v hlavnom tele \emph{int main(int argc, char *argv[])} využívajú funkcie knižnice \emph{pcap.h}. Na začiatku je potrebné nastaviť interface, ten je poskytnutý užívateľom vďaka argumentu \emph{-i} a je uložený do premennej \emph{char *iface}, prípadne je možné zobraziť zoznam dostupných zariadení ak tento parameter vynecháme (program skončí s hodnotou \textbf{0}).
+	
+	Potom možeme priradiť zariadeniu masku podsiete \emph{bpf\_u\_int32 pMask} a ip adresu  \emph{bpf\_u\_int32 pNet} prostredníctvom funkcie \emph{pcap\_lookupnet}. Spoločne sa jej predáva aj zariadenie, na ktorom pracujeme. V prípade chyby sa vypíše chybová hláška uložená v \emph{errbuf} a ukončí sa program s hodnotou \textbf{10}.
+	
+	Následne je možné otvoriť zariadenie k zachytávaniu paketov, k tomu slúži funkcia \emph{pcap\_open\_live(iface, BUFSIZ, 0, 1000, errbuf)} a hodnota z funkcie sa uloží do \emph{pcap\_t *opensniff}, v prípade chyby je vypísaná chybová hláška a program končí s hodnotou \textbf{10}. Hodnota \textbf{0} vypína \emph{promiskuitný režim}, avšak aj tak sa môže stať, že v špecifických prípadoch ostane zapnutý (zavisí aj od platformy, na ktorej sa program používa)\cite{WikiPromiscuity}.
+	
+	Teraz je možné zostaviť filter \emph{char filter[50])}, ktorý sa zostavuje na základe používateľom zadaných argumentov. V prípade, že nebol explicitne zadaný požiadavok na filtráciu, implicitne sa nastavuje filter prepúšťajúci len UDP a TCP pakety. Funkciou \emph{pcap\_compile} s parametrami \emph{pcap\_compile(opensniff, \&fp, filter, 0, pNet)} skompilujeme náš adaptér a následne ho môžeme aplikovať pomocou \emph{pcap\_setfilter(opensniff, \&fp)}, obidve funkcie v prípade chyby vypíšu hlášku a ukončia program s návratovou chybou \textbf{10} \cite{Tcpdump}. 
+	
+	Takto zostavanený adaptér teraz môžeme pomocou \emph{pcap\_loop(opensniff, pnum, callback, NULL)} uviesť do \uv{nekonečného cyklu}, kedy sa zachytávajú pakety v počte \emph{pnum} (\textit{implicitne pnum = 1}) a pri každom zachytenom pakete sa volá funkcia \emph{callback} \cite{Geeksniffer}.
+	
+	%veci o callbacku
+	
 	\section{Testovanie}
+	
+	%pridat screenshoty
+	
+	\newpage
 	\section{Použité zdroje}
+	
+	\bibliographystyle{czechiso}
+	\renewcommand{\refname}{Použitá literatúra}
+	\bibliography{manual}
 	
 	
 \end{document}

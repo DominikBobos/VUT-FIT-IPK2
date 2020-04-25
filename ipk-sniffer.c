@@ -7,6 +7,7 @@
 
 
 #include <stdio.h>				//////////////////////////
+#include <signal.h>				//						//
 #include <stdlib.h> 			//						//
 #include <stdbool.h>			//						//
 #include <ctype.h>				//	C-dependencies		//
@@ -15,16 +16,13 @@
 #include <time.h>				//						//
 #include <sys/types.h>			//////////////////////////
 #include <netdb.h>				//////////////////////////
-#include <sys/socket.h>			//						//
 #include <arpa/inet.h>			//						//
 #include <pcap.h>				//						//
-#include <net/ethernet.h> 		//						//
-#include <netinet/in.h>			// Libs for sniffing 	//
-#include <netinet/ip.h>			//						//
+#include <netinet/ip.h>			// Libs for sniffing 	//
 #include <netinet/tcp.h>		//						//
 #include <netinet/udp.h>		//						//
 #include <netinet/if_ether.h>	//						//
-#include <netinet/ip6.h>		//////////////////////////
+#include <netinet/ip6.h> 		//////////////////////////
 
 
 /*
@@ -59,6 +57,14 @@ void add_space(int count)
 		spaces[i] = ' ';
 	spaces[count] = '\0';
 	printf("%s",spaces);
+}
+
+/*
+*	Function to properly catch keyboard interruptions
+*/
+void intHandler() 
+{
+    exit(0);
 }
 
 
@@ -120,7 +126,10 @@ char *host_name(struct in_addr ip_addr)
 	char *ip = malloc(NI_MAXHOST * sizeof(char));	//buffer about size of the max host
 	if (!ip) 
 	{	return NULL;}
-
+	char *node = malloc(NI_MAXHOST * sizeof(char));	//
+	if (!node) 
+	{	return NULL;}
+	char node_temp[NI_MAXHOST];
 	strcpy(ip, inet_ntoa(ip_addr));	//converts to readable address
 	if (ip == NULL)
 	{
@@ -129,22 +138,59 @@ char *host_name(struct in_addr ip_addr)
 	}
 
 	struct sockaddr_in sa;
-	char *node = malloc(NI_MAXHOST * sizeof(char));
-	if (!node) 
-	{	return NULL;}
- 
+	
 	memset(&sa, 0, sizeof sa);
 	sa.sin_family = AF_INET;
 	 
 	inet_pton(AF_INET, ip, &sa.sin_addr);
  
 	int res = getnameinfo((struct sockaddr*)&sa, sizeof(sa),
+						  node_temp, sizeof(node_temp),
+						  NULL, 0, NI_NAMEREQD); 
+	if (res) 
+	{	free(node); return ip;}
+	else 
+	{	free(ip); strcpy(node, node_temp); return node;}
+}
+
+
+/* 
+*	Gets FQDN from IPv6, when FQDN could not be found
+*	returns IP address back
+*	MODIFICATED from
+*	SOURCE: https://cboard.cprogramming.com/c-programming/169902-getnameinfo-example-problem.html
+* 	AUTHOR: algorism
+*/
+char *host_nameIPv6(struct in6_addr ip_addr)
+{
+	char *ip = malloc(NI_MAXHOST * sizeof(char));	//INET6_ADDRSTRLEN
+	if (!ip) 
+	{	return NULL;}
+	char *node = malloc(NI_MAXHOST * sizeof(char));	
+	if (!node) 
+	{	return NULL;}
+	char node_temp[NI_MAXHOST];
+	if (inet_ntop(AF_INET6, &ip_addr, ip, sizeof(ip)) == NULL)	//converts to readable address
+	{
+		perror("inet_ntop"); 
+		return NULL;
+	}
+
+	struct sockaddr_in6 sa;
+	
+ 
+	memset(&sa, 0, sizeof sa);
+	sa.sin6_family = AF_INET6;
+	 
+	inet_pton(AF_INET6, ip, &sa.sin6_addr);
+ 
+	int res = getnameinfo((struct sockaddr*)&sa, sizeof(sa),
 						  node, sizeof(node),
 						  NULL, 0, NI_NAMEREQD);   
 	if (res) 
-	{	return ip;}
+	{	free(node); return ip;}
 	else 
-	{	return node;}
+	{	free(ip); strcpy(node, node_temp); return node;}
 }
 
 
@@ -157,21 +203,42 @@ char *host_name(struct in_addr ip_addr)
 * 	It is modification from 
 * 	SOURCE: https://gist.github.com/fffaraz/7f9971463558e9ea9545
 *	AUTHOR: Faraz Fallahi 
+*   DATE: 3rd December, 2015.
 */
-struct pckt_info udp_packet(const u_char * buffer)
+struct pckt_info udp_packet(const u_char *buffer, bool ipv6)
 {
 	LOOPS++;
 	struct pckt_info header;
 	int iphdr_len;
-     
-    struct ip *iph = (struct ip *)(buffer + sizeof(struct ether_header));
-    iphdr_len = iph->ip_hl*4;
+    char *temp_src = NULL;
+    char *temp_dest = NULL;
+
+    if (ipv6 == true)
+    {
+    	struct ip6_hdr *iph = (struct ip6_hdr *)(buffer + sizeof(struct ether_header));
+    	iphdr_len = 40; //fixed size
+    	temp_src = host_nameIPv6(iph->ip6_src);
+    	temp_dest = host_nameIPv6(iph->ip6_dst);
+    }
+    else
+    {	
+    	struct ip *iph = (struct ip *)(buffer + sizeof(struct ether_header));
+    	iphdr_len = iph->ip_hl*4;
+    	temp_src = host_name(iph->ip_src);
+    	temp_dest = host_name(iph->ip_dst);
+    }
+    if (temp_src == NULL|| temp_dest == NULL) {	//malloc error
+    	header.header_size = -1;
+    	return header;
+    }
      
     struct udphdr *udph = (struct udphdr*)(buffer + iphdr_len + sizeof(struct ether_header));   
     int udphdr_len =  sizeof(struct ether_header) + iphdr_len + sizeof udph;
      
-    strcpy(header.src_addr,host_name(iph->ip_src));
-    strcpy(header.dest_addr,host_name(iph->ip_dst));
+    strcpy(header.src_addr, temp_src);
+    strcpy(header.dest_addr, temp_dest);
+    free(temp_src);
+	free(temp_dest);
     header.src_port = ntohs(udph->uh_sport);
     header.dest_port = ntohs(udph->uh_dport);
     header.header_size = udphdr_len;
@@ -190,20 +257,36 @@ struct pckt_info udp_packet(const u_char * buffer)
 * 	SOURCE: https://gist.github.com/fffaraz/7f9971463558e9ea9545
 *	AUTHOR: Faraz Fallahi 
 */
-struct pckt_info tcp_packet(const u_char * buffer)
+struct pckt_info tcp_packet(const u_char * buffer, bool ipv6)
 {
 	LOOPS++;
 	struct pckt_info header;
     int iphdr_len;
-     
-    struct ip *iph = (struct ip *)(buffer + sizeof(struct ether_header));
-    iphdr_len = iph->ip_hl*4;
+    char *temp_src = NULL;
+    char *temp_dest = NULL;
+
+    if (ipv6 == true)
+    {
+    	struct ip6_hdr *iph = (struct ip6_hdr *)(buffer + sizeof(struct ether_header));
+    	iphdr_len = 40; //fixed size
+    	temp_src = host_nameIPv6(iph->ip6_src);
+    	temp_dest = host_nameIPv6(iph->ip6_dst);
+    }
+    else
+    {	
+    	struct ip *iph = (struct ip *)(buffer + sizeof(struct ether_header));
+    	iphdr_len = iph->ip_hl*4;
+    	temp_src = host_name(iph->ip_src);
+    	temp_dest = host_name(iph->ip_dst);
+    }
+    if (temp_src == NULL|| temp_dest == NULL) {	//malloc error
+    	header.header_size = -1;
+    	return header;
+    }
 
     struct tcphdr *tcph = (struct tcphdr*)(buffer + iphdr_len + sizeof(struct ether_header));
     int tcphdr_len =  sizeof(struct ether_header) + iphdr_len + tcph->th_off*4;
      
-    char *temp_src = host_name(iph->ip_src);
-    char *temp_dest = host_name(iph->ip_dst);
     strcpy(header.src_addr, temp_src);
     strcpy(header.dest_addr, temp_dest);
     free(temp_src);
@@ -219,17 +302,18 @@ struct pckt_info tcp_packet(const u_char * buffer)
 /*
 *	Gets the whole packet, calls functions for packet parsing
 * 	depending of protocol type
-*	MODIFICATED fucntion from:
+*	MODIFICATED function from:
 * 	SOURCE: https://gist.github.com/fffaraz/7f9971463558e9ea9545
 *	AUTHOR: Faraz Fallahi 
 */
 void callback(u_char *args, const struct pcap_pkthdr* pkthdr,const u_char* buffer)
 {
+	signal(SIGINT, intHandler); 		//to properly catch CTRL+C
 	struct ether_header *p = (struct ether_header *) buffer;
 	bool ipv6 = false;
-	// if (ntohs(p->ether_type) == ETHERTYPE_IPV6) {     // if ETHERTYPE is IPV6, flag is set to true
- //        ipv6 = true;
- //    }
+	if (ntohs(p->ether_type) == ETHERTYPE_IPV6) {     // if ETHERTYPE is IPV6, flag is set to true
+        ipv6 = true;
+    }
 	args = NULL; // for not having a warning of unused variable
 	struct pckt_info packet_info;	// to save values for printing the data
     const unsigned int data_len = (pkthdr->len);
@@ -238,21 +322,42 @@ void callback(u_char *args, const struct pcap_pkthdr* pkthdr,const u_char* buffe
 	strftime(time,sizeof(time),"%H:%M:%S", localtime(&pkthdr->ts.tv_sec));
 
 	//Get the IP Header part of this packet , excluding the ethernet header
-	struct ip *iph = (struct ip*)(buffer + sizeof(struct ether_header));
-	switch (iph->ip_p) //Check the Protocol and do accordingly...
+	if (ipv6 == true)
 	{
-		case 6:  //TCP Protocol
-			packet_info = tcp_packet(buffer);
-			break;
-		 
-		case 17: //UDP Protocol
-			packet_info = udp_packet(buffer);
-			break;
+		struct ip6_hdr *iph = (struct ip6_hdr *)(buffer + sizeof(struct ether_header));
+		switch (iph->ip6_ctlun.ip6_un1.ip6_un1_nxt) //Check the Protocol and do accordingly...
+		{
+			case 6:  //TCP Protocol
+				packet_info = tcp_packet(buffer, ipv6);
+				break;
+			 
+			case 17: //UDP Protocol
+				packet_info = udp_packet(buffer, ipv6);
+				break;
+		}
+	}
+	else
+	{
+		struct ip *iph = (struct ip*)(buffer + sizeof(struct ether_header));
+		switch (iph->ip_p) //Check the Protocol and do accordingly...
+		{
+			case 6:  //TCP Protocol
+				packet_info = tcp_packet(buffer, ipv6);
+				break;
+			 
+			case 17: //UDP Protocol
+				packet_info = udp_packet(buffer, ipv6);
+				break;
+		}
+	}
+	if (packet_info.header_size == -1){ // internal error
+		exit(1);		 	 			//something went wrong (malloc, etc)
 	}
 	print_data(time, pkthdr->ts.tv_usec, packet_info, data_len, data);
 
-    if (LOOPS > PNUM) 
-		{exit(0);}	//not needed on mac, but needed for linux
+    if (LOOPS > PNUM) { //not needed on mac, but needed for linux 
+    	exit(0);
+    }	
 }
 
 /*
@@ -260,8 +365,10 @@ void callback(u_char *args, const struct pcap_pkthdr* pkthdr,const u_char* buffe
 *	Loads value from arguments to program variables 
 *	-h for help
 */
-bool args_parse(int argc, char *argv[], char *iface, char *port, int *pnum, int *tcp, int *udp)
+int args_parse(int argc, char *argv[], char *iface, char *port, int *pnum, int *tcp, int *udp)
 {
+	bool iface_bool = false;
+	bool port_bool = false;
 	static const struct option longopts[] = 
 	{
 		{.name = "tcp", .has_arg = no_argument, .val = 't'},
@@ -271,8 +378,9 @@ bool args_parse(int argc, char *argv[], char *iface, char *port, int *pnum, int 
 	for (;;) 
 	{
 		int opt = getopt_long(argc, argv, "i:p:n:tuh", longopts, NULL);
-		if (opt == -1)
-			break;
+		if (opt == -1){
+			break; 
+		}
 		switch (opt) {
 		case 'i':
 			if (strlen(optarg) > 19)
@@ -281,6 +389,7 @@ bool args_parse(int argc, char *argv[], char *iface, char *port, int *pnum, int 
 				return 1;
 			}
 			strcpy(iface, optarg);
+			iface_bool = true;
 			break;
 		case 'p':
 			if (strlen(optarg) > 9)
@@ -291,6 +400,7 @@ bool args_parse(int argc, char *argv[], char *iface, char *port, int *pnum, int 
 			char temp_port[15] = "port ";
 			strcat(temp_port,optarg);
 			strcpy(port, temp_port);
+			port_bool = true;
 			break;
 		case 'n':
 			*pnum = strtol(optarg, NULL, 10);
@@ -303,40 +413,67 @@ bool args_parse(int argc, char *argv[], char *iface, char *port, int *pnum, int 
 			break;
 		case 'h':
 		default:
-			printf("HELP:\n");
+			puts("HELP:");
 			puts("no parameters = lists all available interfaces");
 			puts("-i <interface> interface, on which packet sniffer works");
 			puts("-p <port_number> port on which we listen");
 			puts("-t | --tcp shows only tcp packets");
 			puts("-u | --udp shows only udp packets");
 			puts("-n <packets_count> shows n packets (default is 1)");
-			return false;
+			return 1;
 		}
 	}
-	return true;
+	if (iface_bool == false ){	// interface was not specified
+		return 33;
+	}
+	if (port_bool == false ){	// port was not specified
+		return 44;
+	}
+	return 0;
 }
 
 int main(int argc, char *argv[])
 {
-	char iface[20], port[15]; 
-	int pnum =0;
-	int tcp=0;
-	int udp = 0;
+	char *iface = malloc(20 * sizeof(char));	//interface
+	char *port = malloc(15 * sizeof(char));		//port
+	if (iface == NULL || port == NULL) {
+		return 1;
+	}
+	int pnum =0;	    	 			//number of packets
+	int tcp = 0;	         			// tcp flag
+	int udp = 0;			 			// udp flag
 	char errbuf[PCAP_ERRBUF_SIZE]; 		//PCAP macro
-	if (!args_parse(argc, argv, iface, port, &pnum, &tcp, &udp))
+	int args = 0;
+	
+	args = args_parse(argc, argv, iface, port, &pnum, &tcp, &udp);
+	if (args == 1) {
+		free(iface);
+		free(port);
 		return 1;		// when something went wrong
-	if (tcp == udp) 
+	}
+	if (args == 33) {	// no command line arguments
+		free(iface);
+		free(port);
+		iface = NULL;
+	}
+	if (args == 44) {	// no arguments with specified port
+		free(port);
+		port = NULL;
+	}
+	if (tcp == udp){
 		tcp = udp = 0;	// that means it looks for both
+	}
 	if (pnum == 0) 		// default number
 	{
 		pnum = 1;
 		PNUM = 1;
 	}   
-    else 
+    else{
     	PNUM = pnum;
+    }
 
-	//when missing -i arguments, it just list all possible interfaces
-	if (iface[0] == '\0')
+	//when missing -i argument, it just list all possible interfaces
+	if (iface == NULL)
 	{
 		pcap_if_t *alldevs, *dlist;
 		int i = 0;
@@ -350,14 +487,15 @@ int main(int argc, char *argv[])
 		//  MODIFICATED from
 		// source: https://www.thegeekstuff.com/2012/10/packet-sniffing-using-libpcap/
 		// author: HIMANSHU ARORA
-		printf("Available interfaces on your system:\n");
+		// date: 25th OCTOBER, 2012
+		printf("Available interfaces:\n");
 		for(dlist=alldevs; dlist; dlist=dlist->next)
 		{
 			printf("%dlist. %s", ++i, dlist->name);
 			if (dlist->description)
 				printf(" (%s)\n", dlist->description);
 			else
-				printf(" (No description available)\n");
+				printf("(No description)\n");
 		}
 		return 0;
 	}
@@ -384,12 +522,12 @@ int main(int argc, char *argv[])
 	// Compile the filter 
 	char filter[50];
 	if (tcp == 1) {strcpy(filter, "tcp ");}
-	if (udp == 1) {strcpy(filter, "udp ");}
-	if (port[0] != '\0' || (tcp != udp)) {strcat(filter, port);}
-	else if (port[0] != '\0') {strcpy(filter, port);}
+	else if (udp == 1) {strcpy(filter, "udp ");}
+	else if (port != NULL && (tcp == udp)) {strcpy(filter, port);}
+	else if (port != NULL && (tcp != udp)) {strcat(filter, port);}
 	else {strcpy(filter, "tcp or udp");}	// looks only for udp and tcp
 	//source: https://www.tcpdump.org/manpages/pcap_compile.3pcap.html
-	if(pcap_compile(opensniff, &fp, filter, 0, PCAP_NETMASK_UNKNOWN) == -1)	//pNet
+	if(pcap_compile(opensniff, &fp, filter, 0, pNet) == -1)	
 	{
 		printf("\npcap_compile() failed\n");
 		return 10;
@@ -402,5 +540,111 @@ int main(int argc, char *argv[])
 	}
 	// Loop for catching packets, ends after pnum packets were cathed
 	pcap_loop(opensniff, pnum, callback, NULL);
+
+	if (iface != NULL){
+		free(iface);
+	}
+	if (port != NULL){
+		free(port);
+	}
+
 	return 0;
 }
+
+
+
+//////////////////////////////////////////////////////////////////
+// 		CODES ABOVE ARE MOSTLY REFERENCED TO CODE BY Tim Carstens 
+//	I have not actually taken anything from this code but they all
+//	    		 are SOMEHOW CONNECTED TO THIS
+//    		 	->	License listed below		 
+//////////////////////////////////////////////////////////////////
+/*
+ * sniffex.c
+ *
+ * Sniffer example of TCP/IP packet capture using libpcap.
+ * 
+ * Version 0.1.1 (2005-07-05)
+ * Copyright (c) 2005 The Tcpdump Group
+ *
+ * This software is intended to be used as a practical example and 
+ * demonstration of the libpcap library; available at:
+ * http://www.tcpdump.org/
+ *
+ ****************************************************************************
+ *
+ * This software is a modification of Tim Carstens' "sniffer.c"
+ * demonstration source code, released as follows:
+ * 
+ * sniffer.c
+ * Copyright (c) 2002 Tim Carstens
+ * 2002-01-07
+ * Demonstration of using libpcap
+ * timcarst -at- yahoo -dot- com
+ * 
+ * "sniffer.c" is distributed under these terms:
+ * 
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 4. The name "Tim Carstens" may not be used to endorse or promote
+ *    products derived from this software without prior written permission
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ * <end of "sniffer.c" terms>
+ *
+ * This software, "sniffex.c", is a derivative work of "sniffer.c" and is
+ * covered by the following terms:
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Because this is a derivative work, you must comply with the "sniffer.c"
+ *    terms reproduced above.
+ * 2. Redistributions of source code must retain the Tcpdump Group copyright
+ *    notice at the top of this source file, this list of conditions and the
+ *    following disclaimer.
+ * 3. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 4. The names "tcpdump" or "libpcap" may not be used to endorse or promote
+ *    products derived from this software without prior written permission.
+ *
+ * THERE IS ABSOLUTELY NO WARRANTY FOR THIS PROGRAM.
+ * BECAUSE THE PROGRAM IS LICENSED FREE OF CHARGE, THERE IS NO WARRANTY
+ * FOR THE PROGRAM, TO THE EXTENT PERMITTED BY APPLICABLE LAW.  EXCEPT WHEN
+ * OTHERWISE STATED IN WRITING THE COPYRIGHT HOLDERS AND/OR OTHER PARTIES
+ * PROVIDE THE PROGRAM "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED
+ * OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.  THE ENTIRE RISK AS
+ * TO THE QUALITY AND PERFORMANCE OF THE PROGRAM IS WITH YOU.  SHOULD THE
+ * PROGRAM PROVE DEFECTIVE, YOU ASSUME THE COST OF ALL NECESSARY SERVICING,
+ * REPAIR OR CORRECTION.
+ * 
+ * IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING
+ * WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MAY MODIFY AND/OR
+ * REDISTRIBUTE THE PROGRAM AS PERMITTED ABOVE, BE LIABLE TO YOU FOR DAMAGES,
+ * INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES ARISING
+ * OUT OF THE USE OR INABILITY TO USE THE PROGRAM (INCLUDING BUT NOT LIMITED
+ * TO LOSS OF DATA OR DATA BEING RENDERED INACCURATE OR LOSSES SUSTAINED BY
+ * YOU OR THIRD PARTIES OR A FAILURE OF THE PROGRAM TO OPERATE WITH ANY OTHER
+ * PROGRAMS), EVEN IF SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGES.
+ * <end of "sniffex.c" terms>
+ * http://www.tcpdump.org/sniffex.c?fbclid=IwAR0AXegTgHNW_-qiaeu5bsnrjf1COWRxQpjbgdIbn2ypljBD111fYY4BB88
+ */
