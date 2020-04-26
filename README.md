@@ -26,3 +26,8 @@ V prípade chybných argumentov alebo bola vyžiadaná nápoveda, program skonč
 V prípade úspechu vráti hodnotu __0__
 
 V prípade zlyhania súčastí knižnice PCAP vráti hodnotu __10__
+
+V prípade zlyhania funkcie callback vráti hodnotu __20__
+
+__Obsah archívu__
+v archíve xbobos00.tar sa nachádza program: Makefile, projekt: ipk-sniffer.c, toto README.md a dokumentácia: manual.pdf .

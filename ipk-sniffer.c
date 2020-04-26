@@ -32,7 +32,7 @@
 struct pckt_info 
 {
     char src_addr[1025];	//contains source IP or FQDN
-    char dest_addr[1025];	//contains source IP or FQDN
+    char dest_addr[1025];	//contains destination IP or FQDN
     unsigned src_port;		//contains source  PORT
     unsigned dest_port;		//contains destination  PORT
     int header_size;		// size of the full packet header
@@ -79,39 +79,55 @@ void print_data(char *time, long microsec, struct pckt_info packet_info,
 	printf("%s.%ld %s : %u > %s : %u\n\n",time, microsec, 
 		packet_info.src_addr, packet_info.src_port, 
 		packet_info.dest_addr, packet_info.dest_port );
-	int for_ascii = 0;							// variables for printing in ascii
 	int header_end = packet_info.header_size;	// header size
-	char ascii;									// variables for printing in ascii
+	char ascii;									// variable for printing in ascii
 	int end_case = 0;							// to correctly show first column
-	for (int i = 0; i < (int)data_len/16+1; i++) {
-		if (i*16 < header_end && header_end <= (i+1)*16)
-			printf("0x%04x",end_case = header_end);
-		else if (i*16 < (int)data_len && (int)data_len <= (i+1)*16)
+	int underflow = 0;	
+	for (int i = 0; i <= (int)data_len/16+1; i++) 
+	{
+		//this is magic, and hours of thinking //forgive me this, but it works
+		end_case += 16;
+		if (i*16 < header_end && header_end <= (i+1)*16) {
+			end_case = header_end;
+			printf("0x%04x",header_end);
+		}
+		else if (end_case > (int)data_len){
 			printf("0x%04x",(int)data_len);
-		else 
-			printf("0x%04x",end_case += 16);
+		}
+		else if (end_case == (int)data_len){
+			printf("--------------------------------------------------------------------------\n\n");
+			break;
+		}
+		else {	
+			printf("0x%04x",end_case);
+		}
 
 		for (int k = 0; k < 16; k++)
 		{
-			if (i*16+k == (int)data_len) {add_space((16 - k)*3+1); break;}
-			if (i*16+k == header_end) {add_space((16 - k)*3+1); break;}
+			if (i*16+k-underflow == (int)data_len) {add_space((16 - k)*3+1); break;}
+			if (i*16+k == header_end) { add_space((16 - k)*3+1); break;}
 			if (k == 8) {printf(" ");}
-        	printf(" %02x", data[i*16+k] & 0xff);
+        	printf(" %02x", data[i*16+k-underflow] & 0xff);
         }	
         printf("  ");
         for (int k = 0; k < 16; k++)
 		{
-			if (i*16+k == (int)data_len) {break;}
-			if (i*16+k == header_end) {printf("\n"); break;}
+			if (i*16+k-underflow == (int)data_len) {
+				printf("\n--------------------------------------------------------------------------\n\n");
+				return;
+			}
+			if (i*16+k == header_end) {
+				underflow = i*16 - header_end + 16; 
+				printf("\n"); break;
+			}
 			if (k == 8) {printf(" ");}
-			for_ascii = data[i*16+k] - 127;
-			ascii = for_ascii;
+			ascii = data[i*16+k-underflow];
 			if (!isprint((int)ascii)) {ascii = 46;}
         	printf("%c", ascii);
         }
         printf("\n");
     }   
-    printf("--------------------------------------------------------------------------\n\n");
+    
 }
 
 /* 
@@ -136,7 +152,6 @@ char *host_name(struct in_addr ip_addr)
 		perror("inet_ntoa"); 
 		return NULL;
 	}
-
 	struct sockaddr_in sa;
 	
 	memset(&sa, 0, sizeof sa);
@@ -170,7 +185,7 @@ char *host_nameIPv6(struct in6_addr ip_addr)
 	if (!node) 
 	{	return NULL;}
 	char node_temp[NI_MAXHOST];
-	if (inet_ntop(AF_INET6, &ip_addr, ip, sizeof(ip)) == NULL)	//converts to readable address
+	if (inet_ntop(AF_INET6, &ip_addr, ip, NI_MAXHOST) == NULL)	//converts to readable address
 	{
 		perror("inet_ntop"); 
 		return NULL;
@@ -185,7 +200,7 @@ char *host_nameIPv6(struct in6_addr ip_addr)
 	inet_pton(AF_INET6, ip, &sa.sin6_addr);
  
 	int res = getnameinfo((struct sockaddr*)&sa, sizeof(sa),
-						  node, sizeof(node),
+						  node_temp, sizeof(node_temp),
 						  NULL, 0, NI_NAMEREQD);   
 	if (res) 
 	{	free(node); return ip;}
@@ -257,7 +272,7 @@ struct pckt_info udp_packet(const u_char *buffer, bool ipv6)
 * 	SOURCE: https://gist.github.com/fffaraz/7f9971463558e9ea9545
 *	AUTHOR: Faraz Fallahi 
 */
-struct pckt_info tcp_packet(const u_char * buffer, bool ipv6)
+struct pckt_info tcp_packet(const u_char *buffer, bool ipv6)
 {
 	LOOPS++;
 	struct pckt_info header;
@@ -311,6 +326,7 @@ void callback(u_char *args, const struct pcap_pkthdr* pkthdr,const u_char* buffe
 	signal(SIGINT, intHandler); 		//to properly catch CTRL+C
 	struct ether_header *p = (struct ether_header *) buffer;
 	bool ipv6 = false;
+	int tcp_udp_switch = 0;
 	if (ntohs(p->ether_type) == ETHERTYPE_IPV6) {     // if ETHERTYPE is IPV6, flag is set to true
         ipv6 = true;
     }
@@ -325,33 +341,25 @@ void callback(u_char *args, const struct pcap_pkthdr* pkthdr,const u_char* buffe
 	if (ipv6 == true)
 	{
 		struct ip6_hdr *iph = (struct ip6_hdr *)(buffer + sizeof(struct ether_header));
-		switch (iph->ip6_ctlun.ip6_un1.ip6_un1_nxt) //Check the Protocol and do accordingly...
-		{
-			case 6:  //TCP Protocol
-				packet_info = tcp_packet(buffer, ipv6);
-				break;
-			 
-			case 17: //UDP Protocol
-				packet_info = udp_packet(buffer, ipv6);
-				break;
-		}
+		tcp_udp_switch = iph->ip6_ctlun.ip6_un1.ip6_un1_nxt;
 	}
 	else
 	{
 		struct ip *iph = (struct ip*)(buffer + sizeof(struct ether_header));
-		switch (iph->ip_p) //Check the Protocol and do accordingly...
-		{
-			case 6:  //TCP Protocol
-				packet_info = tcp_packet(buffer, ipv6);
-				break;
-			 
-			case 17: //UDP Protocol
-				packet_info = udp_packet(buffer, ipv6);
-				break;
-		}
+		tcp_udp_switch = iph->ip_p;
+	}
+	switch (tcp_udp_switch) //Check the Protocol and do accordingly...
+	{
+		case 6:  //TCP Protocol
+			packet_info = tcp_packet(buffer, ipv6);
+			break;
+		 
+		case 17: //UDP Protocol
+			packet_info = udp_packet(buffer, ipv6);
+			break;
 	}
 	if (packet_info.header_size == -1){ // internal error
-		exit(1);		 	 			//something went wrong (malloc, etc)
+		exit(20);		 	 			//something went wrong (malloc, etc)
 	}
 	print_data(time, pkthdr->ts.tv_usec, packet_info, data_len, data);
 
@@ -507,7 +515,7 @@ int main(int argc, char *argv[])
 	// fetch the network address and network mask
 	if (pcap_lookupnet(iface, &pNet, &pMask, errbuf) == -1)
 	{
-		printf("%s\n", errbuf);
+		fprintf(stderr, "%s\n", errbuf);
 		return 10;
 	}
 
@@ -515,7 +523,7 @@ int main(int argc, char *argv[])
 	pcap_t *opensniff = pcap_open_live(iface, BUFSIZ, 0, 1000, errbuf);
 	if(opensniff == NULL)
 	{
-		printf("pcap_open_live() failed due to [%s]\n", errbuf);
+		fprintf(stderr, "pcap_open_live() failed due to [%s]\n", errbuf);
 		return 10;
 	}
 
@@ -529,13 +537,13 @@ int main(int argc, char *argv[])
 	//source: https://www.tcpdump.org/manpages/pcap_compile.3pcap.html
 	if(pcap_compile(opensniff, &fp, filter, 0, pNet) == -1)	
 	{
-		printf("\npcap_compile() failed\n");
+		fprintf(stderr, "\npcap_compile() failed\n");
 		return 10;
 	}
 
 	if(pcap_setfilter(opensniff, &fp) == -1)
 	{
-		printf("pcap_setfilter() failed\n");
+		fprintf(stderr, "pcap_setfilter() failed\n");
 		return 10;
 	}
 	// Loop for catching packets, ends after pnum packets were cathed
@@ -559,6 +567,7 @@ int main(int argc, char *argv[])
 //	    		 are SOMEHOW CONNECTED TO THIS
 //    		 	->	License listed below		 
 //////////////////////////////////////////////////////////////////
+
 /*
  * sniffex.c
  *
