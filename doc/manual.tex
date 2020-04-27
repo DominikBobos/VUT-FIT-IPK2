@@ -159,8 +159,8 @@ struct pckt_info
 	Kedže TCP a UDP majú rozdielne hlavičky \cite{prednaskaTransport}, je potrebné z hlavičky IP zistiť akého protokolu sú nositeľom. Podľa hodnoty uloženej z IP do premennej \emph{int tcp\_udp\_switch} je možné zavolať konkrétne funkcie pre jednotlivé protokoly.
 	K zisťovaniu \textbf{FQDN} teda k zisťovaniu presne stanovenému menu domény \cite{WikiFQDN} slúži funkcia:
 	\begin{lstlisting}
-	char *host_name(struct in\_addr ip\_addr)  // pre IPv4 adresy
-	char *host_nameIPv6(struct in6\_addr ip\_addr) // pre IPv6 adresy
+	char *host_name(struct in_addr ip_addr)  // pre IPv4 adresy
+	char *host_nameIPv6(struct in6_addr ip_addr) // pre IPv6 adresy
 	\end{lstlisting}
 	K nájdeniu mena využíva funkciu \texttt{getnameinfo}. Návratová hodnota funkcie *host\_name | *host\_nameIPv6 je v prípade nájdenia FQDN \texttt{\emph{char} *node}, v prípade neúspechu vráti IP adresu v \texttt{\emph{char} *ip}, v prípade chyby vráti funkcia hodnotu \texttt{NULL}. Funkcia vznikla modifikáciou funkcie z \cite{hostname}.
 	
@@ -180,7 +180,7 @@ Tieto hodnoty sa ďalej posielajú do funkcie \emph{host\_name} prípadne \emph{
 	\subsubsection{Spracovanie TCP}
 	Funkcia k analýze TCP hlavičky. V premennej \emph{buffer} sa nachádza celý paket, \emph{ipv6} je rovná \texttt{true} v prípade, že paket obsahuje IPv6 protokol. 
 	\begin{lstlisting}
-struct pckt\_info tcp\_packet(const u\_char *buffer, bool ipv6)
+struct pckt_info tcp_packet(const u_char *buffer, bool ipv6)
 	\end{lstlisting}
 	\label{spracovanieTCP}
 	Spracovanie IP adries prebieha ako je uvedené v sekcií \ref{spracovanieIP} a hodnoty \texttt{temp\_src} a \texttt{temp\_dest} sa ukladajú do \texttt{header.src\_addr} a \texttt{header.dest\_addr}. 
@@ -200,7 +200,7 @@ Keď sčítame celkové tieto veľkosti hlavičiek získame celkovú veľkosť h
 	\subsubsection{Spracovanie UDP}
 	Spracovanie je obdobné s funkciou k analýze TCP hlavičky, jediný rozdiel je v používanej štruktúre. V premennej \emph{buffer} sa nachádza celý paket, \emph{ipv6} je rovná \texttt{true} v prípade, že paket obsahuje IPv6 protokol. 
 	\begin{lstlisting}
-struct pckt\_info tcp\_packet(const u\_char *buffer, bool ipv6)
+struct pckt_info udp_packet(const u_char *buffer, bool ipv6)
 	\end{lstlisting}
 	Spracovanie IP adries prebieha ako je uvedené v sekcií spracovanie IP \ref{spracovanie IP} a Spracovanie TCP \ref{spracovanieTCP}.
 	
