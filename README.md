@@ -1,3 +1,5 @@
+19.5/20b
+
 # Projekt pre predmet IPK
 ## Packet sniffer - varianta [ZETA]
 
